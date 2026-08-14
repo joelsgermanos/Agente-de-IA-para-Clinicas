@@ -1,0 +1,10 @@
+DROP TABLE IF EXISTS handoffs;
+DROP TABLE IF EXISTS appointments;
+DROP TABLE IF EXISTS messages;
+DROP TABLE IF EXISTS conversations;
+DROP TABLE IF EXISTS team_members;
+DROP TABLE IF EXISTS faqs;
+DROP TABLE IF EXISTS procedures;
+DROP TABLE IF EXISTS patients;
+DROP TABLE IF EXISTS professionals;
+DROP TABLE IF EXISTS clinics;

@@ -1,0 +1,104 @@
+version: "3.9"
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: clinica
+      POSTGRES_PASSWORD: clinica
+      POSTGRES_DB: clinica_ai
+    ports:
+      - "5432:5432"
+    volumes:
+      - pg_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U clinica -d clinica_ai"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  migrate:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    command: ["node", "dist/scripts/migrate.js"]
+    env_file: .env
+    environment:
+      DATABASE_URL: postgres://clinica:clinica@postgres:5432/clinica_ai
+      REDIS_URL: redis://redis:6379
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      DATABASE_URL: postgres://clinica:clinica@postgres:5432/clinica_ai
+      REDIS_URL: redis://redis:6379
+    ports:
+      - "3000:3000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+
+  worker:
+    build:
+      context: .
+      dockerfile: Dockerfile.worker
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      DATABASE_URL: postgres://clinica:clinica@postgres:5432/clinica_ai
+      REDIS_URL: redis://redis:6379
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+
+  # Evolution API (integracao WhatsApp). Opcional caso ja possua uma instancia
+  # gerenciada separadamente - neste caso remova este servico e aponte
+  # EVOLUTION_API_URL no .env para a instancia existente.
+  evolution-api:
+    image: atendai/evolution-api:v2.1.1
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    environment:
+      AUTHENTICATION_API_KEY: change-me-evolution-global-key
+      DATABASE_ENABLED: "false"
+      CACHE_REDIS_ENABLED: "true"
+      CACHE_REDIS_URI: redis://redis:6379/1
+      WEBHOOK_GLOBAL_URL: http://api:3000/webhook/whatsapp
+      WEBHOOK_GLOBAL_ENABLED: "true"
+    depends_on:
+      redis:
+        condition: service_healthy
+
+volumes:
+  pg_data:
+  redis_data:
