@@ -1,4 +1,4 @@
-import { normalizeEvolutionWebhook } from "./message.normalizer";
+import { normalizeEvolutionWebhook, type EvolutionWebhookBody } from "./message.normalizer";
 import { transcribeAudio, describeImage } from "./media.service";
 import { bufferInboundMessage } from "./debounce.service";
 import { pauseAiForChat } from "./humanPause.service";
@@ -10,12 +10,6 @@ import { childLogger } from "../../config/logger";
 import { env } from "../../config/env";
 
 const log = childLogger("whatsapp-inbound");
-
-interface EvolutionWebhookBody {
-  event?: string;
-  instance?: string;
-  data?: unknown;
-}
 
 /**
  * Ponto de entrada do webhook: normaliza o payload, resolve a clinica/paciente/

@@ -4,7 +4,7 @@ import { childLogger } from "../../config/logger";
 
 const log = childLogger("message-normalizer");
 
-interface EvolutionWebhookBody {
+export interface EvolutionWebhookBody {
   event?: string;
   instance?: string;
   data?: {

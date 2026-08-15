@@ -5,7 +5,7 @@ import type { AgentSignals } from "./types";
 /** Ferramenta de transbordo disponivel para todos os sub-agentes. */
 export function createHandoffTool(signals: AgentSignals) {
   return tool(
-    async ({ reason }: { reason: string }) => {
+    async ({ reason }) => {
       signals.handoffRequested = true;
       signals.handoffReason = reason;
       return "Transbordo registrado. Um atendente humano assumira esta conversa em instantes.";

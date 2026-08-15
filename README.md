@@ -76,6 +76,11 @@ ferramentas no-code (n8n, Zapier, etc).
 
 ## Setup
 
+> **Nota:** a versao do `typescript` esta fixada em `5.4.5` no `package.json`. Versoes 5.7+ combinadas com
+> `zod` 3.25.x disparam um bug de instanciacao de tipos excessivamente profunda (`TS2589`) nos overloads do
+> `tool()` do `@langchain/core`, tornando o `tsc` extremamente lento/OOM. Nao atualize o TypeScript sem
+> testar `npm run typecheck` antes.
+
 ### 1. Pre-requisitos
 
 - Node.js 20+
