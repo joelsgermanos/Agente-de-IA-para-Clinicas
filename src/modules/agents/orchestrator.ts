@@ -1,10 +1,10 @@
-import { Annotation, StateGraph, START, END } from "@langchain/langgraph";
 import { AIMessage, BaseMessage, HumanMessage } from "@langchain/core/messages";
 import { routeToAgent, type AgentName } from "./router.agent";
 import { runReceptionistAgent } from "./receptionist.agent";
 import { runSchedulerAgent } from "./scheduler.agent";
 import { runFaqAgent } from "./faq.agent";
 import { runSpecialistAgent } from "./specialist.agent";
+import type { AgentRunResult } from "./agentExecutor";
 import { createEmptySignals, type AgentSignals, type AgentToolContext } from "./tools/types";
 import { triggerHumanHandoff } from "../handoff/handoff.service";
 import { updateContext } from "../context/contextMap.service";
@@ -15,71 +15,22 @@ import type { Clinic, ContextMap, Conversation, Patient } from "../../types/doma
 
 const log = childLogger("orchestrator");
 
-const OrchestratorState = Annotation.Root({
-  ctx: Annotation<AgentToolContext>(),
-  history: Annotation<BaseMessage[]>(),
-  routedAgent: Annotation<AgentName>(),
-  signals: Annotation<AgentSignals>(),
-  responseText: Annotation<string>({ reducer: (_prev, next) => next, default: () => "" }),
-});
-
-type State = typeof OrchestratorState.State;
-
-async function routeNode(state: State): Promise<Partial<State>> {
-  const latest = state.history[state.history.length - 1];
-  const latestText = typeof latest?.content === "string" ? latest.content : "";
-  const { agent, reasoning } = await routeToAgent(state.ctx, latestText);
-  log.info({ chatId: state.ctx.chatId, agent, reasoning }, "roteamento de conversa");
-  return { routedAgent: agent };
-}
-
-async function dispatchNode(state: State): Promise<Partial<State>> {
-  const signals = createEmptySignals();
-  const runner =
-    state.routedAgent === "scheduler"
-      ? runSchedulerAgent
-      : state.routedAgent === "faq"
-        ? runFaqAgent
-        : state.routedAgent === "specialist"
-          ? runSpecialistAgent
-          : runReceptionistAgent;
-
-  const result = await runner(state.ctx, signals, state.history);
-  return { signals, responseText: result.finalText };
-}
-
-async function handoffNode(state: State): Promise<Partial<State>> {
-  if (!state.signals.handoffRequested) return {};
-
-  await triggerHumanHandoff({
-    clinic: state.ctx.clinic,
-    patient: state.ctx.patient,
-    conversationId: state.ctx.conversationId,
-    chatId: state.ctx.chatId,
-    reason: state.signals.handoffReason ?? "Motivo nao especificado pelo agente.",
-    triggeredBy: "agent",
-    conversationSummary: state.ctx.context.summary,
-  });
-
-  return {};
-}
-
-const graph = new StateGraph(OrchestratorState)
-  .addNode("route", routeNode)
-  .addNode("dispatch", dispatchNode)
-  .addNode("handoff", handoffNode)
-  .addEdge(START, "route")
-  .addEdge("route", "dispatch")
-  .addEdge("dispatch", "handoff")
-  .addEdge("handoff", END)
-  .compile();
-
 export interface OrchestratorOutput {
   responseText: string;
   images: { url: string; caption?: string }[];
   agentUsed: AgentName;
   handoff: boolean;
 }
+
+const AGENT_RUNNERS: Record<
+  AgentName,
+  (ctx: AgentToolContext, signals: AgentSignals, history: BaseMessage[]) => Promise<AgentRunResult>
+> = {
+  receptionist: runReceptionistAgent,
+  scheduler: runSchedulerAgent,
+  faq: runFaqAgent,
+  specialist: runSpecialistAgent,
+};
 
 function appendToSummary(previous: string, userText: string, agentText: string): string {
   const MAX_CHARS = 1800;
@@ -89,8 +40,15 @@ function appendToSummary(previous: string, userText: string, agentText: string):
 
 /**
  * Ponto de entrada do console de agentes: roteia a mensagem do paciente para
- * o sub-agente correto, executa suas ferramentas e retorna a resposta final
- * ja pronta para envio (texto + imagens), atualizando o Mapa de Contexto.
+ * o sub-agente correto (Recepcionista/Comercial, Agendador, FAQ ou
+ * Especialista), executa suas ferramentas via LangChain e retorna a resposta
+ * final pronta para envio (texto + imagens), atualizando o Mapa de Contexto.
+ *
+ * O fluxo e sequencial (roteia -> despacha -> trata transbordo), sem ciclos
+ * ou necessidade de checkpoint entre turnos, por isso e implementado como
+ * funcoes assincronas simples em vez de um StateGraph do LangGraph - a
+ * mesma logica de roteador + sub-agentes especializados descrita na
+ * arquitetura, sem o overhead de um motor de grafo para um pipeline linear.
  */
 export async function handleIncomingMessage(input: {
   clinic: Clinic;
@@ -116,22 +74,32 @@ export async function handleIncomingMessage(input: {
   );
   history.push(new HumanMessage(input.userText));
 
-  const finalState = await graph.invoke({
-    ctx,
-    history,
-    routedAgent: "receptionist",
-    signals: createEmptySignals(),
-    responseText: "",
-  });
+  const { agent, reasoning } = await routeToAgent(ctx, input.userText);
+  log.info({ chatId: input.chatId, agent, reasoning }, "roteamento de conversa");
 
-  const updatedSummary = appendToSummary(input.context.summary, input.userText, finalState.responseText);
-  await updateContext(input.chatId, { currentAgent: finalState.routedAgent, summary: updatedSummary });
-  await setConversationAgent(input.conversation.id, finalState.routedAgent);
+  const signals = createEmptySignals();
+  const result = await AGENT_RUNNERS[agent](ctx, signals, history);
+
+  if (signals.handoffRequested) {
+    await triggerHumanHandoff({
+      clinic: input.clinic,
+      patient: input.patient,
+      conversationId: input.conversation.id,
+      chatId: input.chatId,
+      reason: signals.handoffReason ?? "Motivo nao especificado pelo agente.",
+      triggeredBy: "agent",
+      conversationSummary: input.context.summary,
+    });
+  }
+
+  const updatedSummary = appendToSummary(input.context.summary, input.userText, result.finalText);
+  await updateContext(input.chatId, { currentAgent: agent, summary: updatedSummary });
+  await setConversationAgent(input.conversation.id, agent);
 
   return {
-    responseText: finalState.responseText,
-    images: finalState.signals.images,
-    agentUsed: finalState.routedAgent,
-    handoff: finalState.signals.handoffRequested,
+    responseText: result.finalText,
+    images: signals.images,
+    agentUsed: agent,
+    handoff: signals.handoffRequested,
   };
 }

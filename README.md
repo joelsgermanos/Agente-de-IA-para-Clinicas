@@ -31,7 +31,7 @@ ferramentas no-code (n8n, Zapier, etc).
                          ┌────────────────────────────────────────────┐
                          │              Worker (BullMQ)                 │
                          │  ┌────────────────────────────────────────┐ │
-                         │  │  Console de Agentes de IA (LangGraph)    │ │
+                         │  │  Console de Agentes de IA (LangChain)    │ │
                          │  │                                          │ │
                          │  │   Roteador ─┬─▶ Recepcionista/Comercial  │ │
                          │  │             ├─▶ Agendador (Google Cal.)  │ │
@@ -55,7 +55,7 @@ ferramentas no-code (n8n, Zapier, etc).
 | `src/server.ts` | API HTTP (Express): webhook do WhatsApp, health check, admin |
 | `worker/index.ts` | Processo separado: worker de debounce (IA) + worker de lembretes |
 | `src/modules/whatsapp` | Cliente Evolution API, normalizacao de payload, transcricao/analise de midia, envio com digitando+fracionamento, debounce (Redis+BullMQ), pausa humana |
-| `src/modules/agents` | Console de multiagentes: roteador + recepcionista/comercial + agendador + FAQ + especialista, tools LangChain, orquestrador LangGraph |
+| `src/modules/agents` | Console de multiagentes: roteador + recepcionista/comercial + agendador + FAQ + especialista, tools LangChain, orquestrador sequencial |
 | `src/modules/calendar` | Integracao Google Calendar (OAuth2 ou Service Account), disponibilidade multi-profissional |
 | `src/modules/conversations`, `patients`, `clinics`, `appointments`, `handoff` | Repositorios PostgreSQL |
 | `src/modules/context` | Mapa de Contexto por chat no Redis |
@@ -66,7 +66,8 @@ ferramentas no-code (n8n, Zapier, etc).
 
 - **Node.js 20+ / TypeScript**
 - **Express** (API webhook)
-- **LangChain.js + LangGraph.js** (multiagentes: roteador + sub-agentes com tools)
+- **LangChain.js** (`@langchain/core` + `@langchain/openai`): tool-calling (function calling) com Zod,
+  saida estruturada para o roteador, loop ReAct proprio (`agentExecutor.ts`) para os sub-agentes
 - **PostgreSQL** (dados de longa duracao: clinicas, pacientes, conversas, agendamentos)
 - **Redis + BullMQ** (contexto de sessao, debounce de mensagens picotadas, filas de processamento e lembretes)
 - **Evolution API** (integracao WhatsApp nao-oficial)
@@ -138,7 +139,11 @@ do profissional ou um calendario secundario dedicado).
    salvo no PostgreSQL e colocado no buffer Redis do chat (`debounce.service.ts`).
 5. Cada nova mensagem reagenda um job atrasado no BullMQ (`MESSAGE_DEBOUNCE_MS`, default 4s). Quando o timer
    expira sem nova mensagem, o worker processa o buffer inteiro como uma unica mensagem concatenada.
-6. O worker verifica se a IA esta pausada; se nao estiver, chama o **orquestrador** (`orchestrator.ts`):
+6. O worker verifica se a IA esta pausada; se nao estiver, chama o **orquestrador** (`orchestrator.ts`) -
+   um pipeline sequencial simples (roteia -> despacha -> trata transbordo), sem ciclos ou necessidade de
+   checkpoint entre turnos, por isso implementado com funcoes assincronas em vez do `StateGraph` do
+   LangGraph.js (motor de grafo com maquina de estados, util para fluxos ciclicos/com persistencia de
+   estado entre execucoes, mas overhead desnecessario aqui):
    - **Agente Roteador** classifica a intencao e escolhe o sub-agente (recepcionista, agendador, FAQ,
      especialista).
    - O sub-agente executa um loop de tool-calling (LangChain) com as ferramentas do seu dominio.
@@ -175,7 +180,7 @@ src/
     conversations/    conversas e mensagens (Postgres)
     appointments/     agendamentos (Postgres)
     calendar/          Google Calendar (auth + disponibilidade + CRUD de eventos)
-    agents/            roteador, sub-agentes, tools, prompts, orquestrador LangGraph
+    agents/            roteador, sub-agentes, tools, prompts, orquestrador (LangChain)
     handoff/           logica de transbordo humano
     notifications/     notificacao da equipe via WhatsApp
     reminders/         lembretes automaticos (service + fila + worker)
