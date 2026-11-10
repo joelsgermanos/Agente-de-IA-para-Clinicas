@@ -1,5 +1,7 @@
 # Sistema de Atendimento e Agendamento Automatico via WhatsApp para Clinicas
 
+> **Também neste repositório:** [`gestao-operacional/`](gestao-operacional/) — Sistema de Gestão Operacional (O.S.) para terminal de granéis líquidos, app desktop offline (Electron + SQLite local).
+
 Backend em **Node.js + TypeScript** para atendimento multiagente de IA via WhatsApp: qualificacao de leads,
 contorno de objecoes, FAQ, duvidas tecnicas sobre procedimentos, agendamento em **Google Calendar** com
 multiplos profissionais, transbordo para humanos e lembretes automaticos de consulta. Construido sem
