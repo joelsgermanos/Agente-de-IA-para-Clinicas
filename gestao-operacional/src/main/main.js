@@ -9,7 +9,12 @@ const { Services } = require('./services');
 const { dispatch } = require('./router');
 
 // Permite apontar a pasta de dados (ex.: instalação portátil em pendrive ou testes).
-if (process.env.GESTAO_DATA_DIR) app.setPath('userData', path.resolve(process.env.GESTAO_DATA_DIR));
+// Pasta de dados fixa e sem acentos: com o productName acentuado ("Gestão Operacional") o Electron
+// resolve userData para a própria pasta AppData/.config, misturando o banco com outros arquivos.
+app.setPath(
+  'userData',
+  process.env.GESTAO_DATA_DIR ? path.resolve(process.env.GESTAO_DATA_DIR) : path.join(app.getPath('appData'), 'GestaoOperacional')
+);
 
 let mainWindow = null;
 let db = null;

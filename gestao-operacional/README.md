@@ -39,7 +39,7 @@ Saída em `dist/`: `Gestão Operacional Setup 1.0.0.exe` (instalador) e `Gestão
 
 ### Onde ficam os dados
 
-`%APPDATA%\Gestão Operacional\gestao-operacional.sqlite` (Windows). O caminho exato aparece em
+`%APPDATA%\GestaoOperacional\gestao-operacional.sqlite` (Windows) ou `~/.config/GestaoOperacional/` (Linux). O caminho exato aparece em
 *Cadastros › Sistema › Backup*. Para usar outra pasta (ex.: pendrive com a versão portátil), defina a variável de
 ambiente `GESTAO_DATA_DIR`.
 
