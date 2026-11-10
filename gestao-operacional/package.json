@@ -2,18 +2,18 @@
   "name": "gestao-operacional",
   "productName": "Gestão Operacional",
   "version": "1.0.0",
-  "description": "Sistema de Gestão de Ordens de Serviço para terminal de granéis líquidos — aplicativo desktop 100% offline",
+  "description": "Sistema de Gestão de Ordens de Serviço para terminal de granéis líquidos — versão web (navegador) e desktop",
   "main": "src/main/main.js",
   "private": true,
   "scripts": {
-    "start": "electron .",
-    "dev:web": "node scripts/dev-server.js",
+    "start": "node src/server/server.js",
+    "desktop": "electron .",
     "test": "node --test test/*.test.js",
     "dist:win": "electron-builder --win --x64",
     "dist:dir": "electron-builder --dir"
   },
   "dependencies": {
-    "sql.js": "1.13.0"
+    "@libsql/client": "0.17.4"
   },
   "devDependencies": {
     "electron": "38.4.0",
@@ -27,11 +27,9 @@
       "buildResources": "build"
     },
     "files": [
-      "src/**/*",
+      "src/main/**/*",
+      "src/renderer/**/*",
       "package.json"
-    ],
-    "asarUnpack": [
-      "node_modules/sql.js/dist/sql-wasm.wasm"
     ],
     "win": {
       "target": [
@@ -47,5 +45,8 @@
       "createDesktopShortcut": true,
       "shortcutName": "Gestão Operacional"
     }
+  },
+  "engines": {
+    "node": ">=20"
   }
 }

@@ -1,5 +1,5 @@
 'use strict';
-/** Processo principal do Electron: janela, banco local, IPC, PDF e backup. Nenhuma chamada de rede. */
+/** Processo principal do app desktop (Electron): janela, banco local, IPC e PDF. Nenhuma chamada de rede. */
 const { app, BrowserWindow, ipcMain, dialog, shell, Menu, session } = require('electron');
 const fs = require('fs');
 const os = require('os');
@@ -76,36 +76,6 @@ async function savePdf({ html, filename }) {
   }
 }
 
-async function exportBackup() {
-  services.requireRole('gestor');
-  const stamp = new Date().toISOString().slice(0, 16).replace(/[:T]/g, '-');
-  const { canceled, filePath } = await dialog.showSaveDialog(mainWindow, {
-    title: 'Exportar backup do banco de dados',
-    defaultPath: path.join(app.getPath('documents'), `backup-gestao-operacional-${stamp}.sqlite`),
-    filters: [{ name: 'Backup do sistema', extensions: ['sqlite'] }],
-  });
-  if (canceled || !filePath) return { saved: false };
-  fs.writeFileSync(filePath, db.export());
-  return { saved: true, filePath };
-}
-
-async function importBackup() {
-  services.requireRole('gestor');
-  const { canceled, filePaths } = await dialog.showOpenDialog(mainWindow, {
-    title: 'Restaurar backup',
-    properties: ['openFile'],
-    filters: [{ name: 'Backup do sistema', extensions: ['sqlite', 'db'] }],
-  });
-  if (canceled || !filePaths || !filePaths[0]) return { restored: false };
-  const buf = fs.readFileSync(filePaths[0]);
-  await Database.validateBackup(buf);
-  // cópia de segurança do banco atual antes de substituir
-  fs.writeFileSync(dbFile() + '.antes-da-restauracao', db.export());
-  await db.replaceWith(buf);
-  services.logout();
-  return { restored: true };
-}
-
 function wrap(fn) {
   return async (_e, payload) => {
     try {
@@ -128,8 +98,6 @@ app.whenReady().then(async () => {
 
   ipcMain.handle('api', (_e, channel, payload) => dispatch(services, channel, payload));
   ipcMain.handle('pdf:save', wrap(savePdf));
-  ipcMain.handle('backup:export', wrap(exportBackup));
-  ipcMain.handle('backup:import', wrap(importBackup));
   ipcMain.handle('app:info', wrap(async () => ({ version: app.getVersion(), dbPath: dbFile() })));
 
   if (!process.env.GESTAO_DEVTOOLS) Menu.setApplicationMenu(null);
@@ -141,6 +109,5 @@ app.whenReady().then(async () => {
 });
 
 app.on('window-all-closed', () => {
-  if (db) db.save();
   if (process.platform !== 'darwin') app.quit();
 });

@@ -1,0 +1,19 @@
+# Blueprint do Render para a versão web do Gestão Operacional (plano gratuito).
+# Os dados ficam no Turso (plano gratuito): defina TURSO_DATABASE_URL e TURSO_AUTH_TOKEN ao criar o serviço.
+services:
+  - type: web
+    name: gestao-operacional
+    runtime: node
+    plan: free
+    rootDir: gestao-operacional
+    buildCommand: npm ci --omit=dev
+    startCommand: npm start
+    healthCheckPath: /healthz
+    autoDeploy: true
+    envVars:
+      - key: NODE_VERSION
+        value: "22"
+      - key: TURSO_DATABASE_URL
+        sync: false
+      - key: TURSO_AUTH_TOKEN
+        sync: false

@@ -738,7 +738,6 @@
 
   function viewCadSystem() {
     const sc = S.scale;
-    const desktop = window.api.platform === 'desktop';
     const scaleRows = sc
       ? sc.preview
           .map((p) => `<tr><td>${esc(fmtDate(p.date))}</td><td><span class="badge b-planejada">${esc(p.D || '—')}</span></td><td><span class="badge b-gestor">${esc(p.N || '—')}</span></td><td class="muted">${p.F.map(esc).join(', ')}</td></tr>`)
@@ -765,14 +764,10 @@
             <div class="inline"><button class="btn btn-sm" data-act="logo-upload">Enviar logo</button>${S.meta.logo ? '<button class="btn btn-danger btn-sm" data-act="logo-reset">Restaurar padrão</button>' : ''}</div>
             <p class="help">Exibida em branco sobre fundo navy (login, menu e impressões).</p>
           </div></div>
-          <div class="card"><div class="card-head">Backup do banco de dados local</div><div class="card-body">
-            ${
-              desktop
-                ? `<p class="help" style="margin-top:0">Todos os dados ficam num único arquivo nesta máquina. Exporte cópias periodicamente para um pendrive ou outra pasta.</p>
-                   <div class="inline"><button class="btn btn-primary btn-sm" data-act="backup-export">Exportar backup</button><button class="btn btn-sm" data-act="backup-import">Restaurar backup</button></div>
-                   <p class="help" data-dbpath></p>`
-                : '<p class="help">Disponível apenas no aplicativo desktop.</p>'
-            }
+          <div class="card"><div class="card-head">Backup dos dados</div><div class="card-body">
+            <p class="help" style="margin-top:0">Exporte cópias periódicas (arquivo .json) e guarde em outro lugar. A restauração substitui todos os dados atuais.</p>
+            <div class="inline"><button class="btn btn-primary btn-sm" data-act="backup-export">Exportar backup</button><button class="btn btn-sm" data-act="backup-import">Restaurar backup</button></div>
+            <p class="help" data-dbpath></p>
           </div></div>
         </div>
 
@@ -1155,16 +1150,36 @@
       render();
     },
     async 'backup-export'() {
-      const r = await window.api.exportBackup();
-      if (!r.ok) throw new Error(r.error);
-      if (r.data.saved) toast('Backup exportado');
+      const data = await api('backup:export');
+      const stamp = new Date().toISOString().slice(0, 16).replace(/[:T]/g, '-');
+      const blob = new Blob([JSON.stringify(data)], { type: 'application/json' });
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = `backup-gestao-operacional-${stamp}.json`;
+      document.body.appendChild(a);
+      a.click();
+      setTimeout(() => {
+        URL.revokeObjectURL(a.href);
+        a.remove();
+      }, 1000);
+      toast('Backup exportado');
     },
     async 'backup-import'() {
-      const ok = await confirmBox('Restaurar backup?', 'Todos os dados atuais serão <b>substituídos</b> pelos do arquivo escolhido (uma cópia do banco atual é guardada ao lado do arquivo do banco). Depois disso será necessário entrar novamente.', { confirmLabel: 'Escolher arquivo…', danger: true });
+      const ok = await confirmBox(
+        'Restaurar backup?',
+        'Todos os dados atuais (O.S., cadastros, logins e configurações) serão <b>substituídos</b> pelos do arquivo escolhido e todos os usuários precisarão entrar novamente. Exporte um backup atual antes, por segurança.',
+        { confirmLabel: 'Escolher arquivo…', danger: true }
+      );
       if (!ok) return;
-      const r = await window.api.importBackup();
-      if (!r.ok) throw new Error(r.error);
-      if (!r.data.restored) return;
+      const file = await pickFile('application/json,.json');
+      if (!file) return;
+      let data;
+      try {
+        data = JSON.parse(await file.text());
+      } catch (_) {
+        throw new Error('Arquivo inválido: não é um backup do Gestão Operacional.');
+      }
+      await api('backup:import', { data });
       toast('Backup restaurado. Entre novamente.');
       S.auth = await api('auth:status');
       S.meta = await api('app:meta');

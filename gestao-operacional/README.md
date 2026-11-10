@@ -3,18 +3,60 @@
 Sistema de gestão de **Ordens de Serviço (O.S.)** para a equipe de operação de um terminal de granéis líquidos,
 implementado conforme a especificação *“Sistema de Gestão Operacional — Especificação funcional e visual”*.
 
-Aplicativo **desktop 100% offline**: roda só na máquina local, sem servidor, nuvem ou internet. Todos os dados
-(O.S., cadastros, usuários e imagens dos tanques) ficam em **um único arquivo SQLite** no disco.
+Funciona de duas formas, com o mesmo código e as mesmas regras:
+
+- **Versão web (principal):** abre no navegador por um link, sem instalar nada nos computadores. Pode ser
+  publicada **de graça** no Render (site) + Turso (banco de dados). Só entra quem tem usuário e senha.
+- **Versão desktop (opcional):** app Electron 100% offline, com os dados num arquivo SQLite local.
 
 | Camada | Tecnologia |
 | --- | --- |
-| Empacotamento | Electron (instalador NSIS + versão portátil `.exe` para Windows) |
-| Banco local | SQLite embutido (sql.js / WebAssembly, roda dentro do processo, sem módulo nativo) |
-| Autenticação | Usuário + senha locais, hash **scrypt** com salt (nunca texto puro) |
-| PDF | Gerado localmente pelo motor do próprio app (`printToPDF`) |
+| Servidor web | Node.js puro (`src/server/server.js`), sem frameworks |
+| Banco | SQLite via libSQL: **Turso** na nuvem ou arquivo local |
+| Autenticação | Usuário + senha, hash **scrypt** com salt; sessão em cookie `HttpOnly`/`SameSite=Strict` (só o hash do token fica no banco) |
+| Segurança | Bloqueio após 8 tentativas de login erradas (15 min), proteção CSRF, cabeçalhos de segurança, `noindex` |
+| PDF | Impressão do navegador ("Salvar como PDF"); no desktop, PDF gerado direto pelo app |
 | Interface | HTML/CSS/JS puro, sem CDN nem bibliotecas externas |
 
-## Uso
+## Publicar de graça na nuvem (Render + Turso)
+
+Você precisa de uma conta no GitHub (onde já está este repositório), no **Turso** e no **Render**; os dois
+últimos têm plano gratuito (os nomes dos botões podem variar um pouco conforme o painel de cada serviço).
+
+### 1. Criar o banco de dados no Turso
+
+1. Crie a conta em https://turso.tech (pode entrar com o GitHub).
+2. No painel, clique em **Create Database**, dê um nome (ex.: `gestao-operacional`) e escolha a região mais
+   próxima (ex.: São Paulo, se disponível).
+3. Abra o banco e copie a **URL** (começa com `libsql://`).
+4. Clique em **Create Token** (permissão de leitura e escrita, sem expiração) e copie o **token**.
+   Guarde-o como uma senha: quem tiver o token acessa os dados.
+
+### 2. Publicar o site no Render
+
+1. Mescle o branch deste trabalho no `main` do repositório (ou escolha o branch no passo 4).
+2. Crie a conta em https://render.com (entre com o GitHub) e autorize o acesso ao repositório.
+3. Clique em **New › Blueprint** e selecione o repositório: o Render lê o arquivo `render.yaml` da raiz.
+4. Ele pede os valores de `TURSO_DATABASE_URL` e `TURSO_AUTH_TOKEN`: cole a URL e o token do passo 1.
+5. Clique em **Apply**. Em alguns minutos o site fica disponível em `https://gestao-operacional.onrender.com`
+   (ou nome parecido — aparece no painel).
+
+### 3. Primeiro acesso
+
+Abra o link e crie a conta do **Gestor**. Depois, em *Cadastros › Logins*, crie os acessos dos Planejadores e
+Operadores e envie o link + usuário/senha para cada um.
+
+### Limitações do plano gratuito
+
+- O Render "dorme" após 15 min sem acesso; o **primeiro acesso depois disso leva cerca de 1 minuto**. Para
+  evitar, dá para usar um serviço gratuito de monitoramento (ex.: UptimeRobot) chamando `/healthz` a cada 10 min.
+- O Turso gratuito oferece ~5 GB de armazenamento. As imagens dos tanques são a parte que mais ocupa.
+- O link é público na internet (com `noindex`, não aparece em buscadores): a proteção é o login. Use senhas
+  fortes e remova os acessos de quem sair da equipe.
+- Faça backups periódicos em *Cadastros › Sistema › Exportar backup* (arquivo `.json`).
+- Se a rede da empresa bloquear o endereço `onrender.com`, peça à TI para liberar o domínio do site.
+
+## Rodar no próprio computador (teste ou rede interna)
 
 ```bash
 npm install
@@ -24,31 +66,28 @@ npm install
 npm start
 ```
 
-No **primeiro acesso** o app pede a criação da conta do **Gestor** (nome, usuário, senha). Os demais acessos
-(Planejador e Operador) são criados pelo Gestor em *Cadastros › Logins*.
+Abra http://localhost:8080. Sem `TURSO_DATABASE_URL`, os dados ficam em `data/gestao-operacional.sqlite`.
+Variáveis: `PORT` (porta), `DATABASE_FILE` (arquivo local), `TURSO_DATABASE_URL` + `TURSO_AUTH_TOKEN` (nuvem).
+Para servir numa rede interna, rode num computador/servidor e acesse `http://<ip-do-servidor>:8080`.
 
-### Gerar o instalador para Windows
+## Versão desktop (opcional, offline)
 
-Execute num computador Windows (no Linux/macOS o electron-builder exige o Wine para editar o `.exe`):
+```bash
+npm run desktop
+```
+
+Instalador para Windows (execute num computador Windows):
 
 ```bash
 npm run dist:win
 ```
 
-Saída em `dist/`: `Gestão Operacional Setup 1.0.0.exe` (instalador) e `Gestão Operacional 1.0.0.exe` (portátil).
-
-### Onde ficam os dados
-
-`%APPDATA%\GestaoOperacional\gestao-operacional.sqlite` (Windows) ou `~/.config/GestaoOperacional/` (Linux). O caminho exato aparece em
-*Cadastros › Sistema › Backup*. Para usar outra pasta (ex.: pendrive com a versão portátil), defina a variável de
-ambiente `GESTAO_DATA_DIR`.
-
-**Backup:** *Cadastros › Sistema › Exportar backup* salva uma cópia do banco; *Restaurar backup* valida o arquivo e
-substitui os dados (guardando antes uma cópia `*.antes-da-restauracao` do banco atual).
+Os dados ficam em `%APPDATA%\GestaoOperacional\gestao-operacional.sqlite` (ou na pasta da variável
+`GESTAO_DATA_DIR`).
 
 ## Funcionalidades
 
-- **Perfis e permissões** (Gestor, Planejador, Operador) aplicados na interface **e** no processo principal.
+- **Perfis e permissões** (Gestor, Planejador, Operador) aplicados na interface **e** no servidor.
   Operador não vê rascunhos, não cria agendamentos nem exclui O.S.; preenche a aba Final e imprime.
 - **Ordens de Serviço**: numeração automática `AAAA-NNNN`; abas *Agendamento* e *Final* (Final liberada após
   planejar); chips de tipo de operação e tanques; prévia automática da imagem/diagrama do tanque para Operação
@@ -89,29 +128,23 @@ Capacidade da equipe = dias escalados no período × 4 operadores × 10 h efetiv
 ## Estrutura
 
 ```
-src/main/      processo principal (Electron)
-  main.js      janela, IPC, PDF, backup, bloqueio de rede
-  db.js        SQLite embutido + persistência atômica em arquivo
-  services.js  regras de negócio e permissões
-  domain.js    tipos/blocos, escala de equipes, cálculos do Dashboard
-  auth.js      hash de senhas (scrypt)
-  router.js    canais de API
-src/renderer/  interface (index.html, styles.css, app.js, print.js)
-scripts/dev-server.js  mesma interface no navegador para desenvolvimento
-test/          testes das regras de negócio (node --test)
+src/server/server.js  servidor web (API, sessões, arquivos estáticos)
+src/main/             regras e dados, compartilhados pelas versões web e desktop
+  services.js         regras de negócio, permissões e sessões
+  domain.js           tipos/blocos, escala de equipes, cálculos do Dashboard
+  db.js               banco libSQL (Turso ou arquivo local) e backup JSON
+  auth.js             hash de senhas (scrypt)
+  router.js           canais da API
+  main.js, preload.js app desktop (Electron)
+src/renderer/         interface (index.html, styles.css, app.js, print.js, web-api.js)
+render.yaml           (na raiz do repositório) publicação no Render
+test/                 testes (node --test)
 ```
 
-## Desenvolvimento
+## Testes
 
 ```bash
 npm test
 ```
-
-```bash
-npm run dev:web -- --memory
-```
-
-O segundo comando abre a interface em `http://127.0.0.1:5173` usando as mesmas regras e um banco em memória
-(sem `--memory`, grava em `.dev-data/`). É só uma ferramenta de desenvolvimento: o app instalado não usa rede.
 
 O logo incluído é provisório — envie o da empresa em *Cadastros › Sistema › Logo da empresa*.

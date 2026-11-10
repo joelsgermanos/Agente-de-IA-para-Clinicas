@@ -1,5 +1,5 @@
 'use strict';
-/** Mapa canal → operação. Usado tanto pelo IPC do Electron quanto pelo servidor web de desenvolvimento. */
+/** Mapa canal → operação. Usado pelo servidor web e pelo IPC do app desktop. */
 const routes = {
   'app:meta': (s) => s.meta(),
   'auth:status': (s) => s.authStatus(),
@@ -38,6 +38,8 @@ const routes = {
   'scale:set': (s, p) => s.scaleSet(p),
   'settings:logo': (s, p) => s.logoSet(p.dataUrl),
   'admin:reset': (s) => s.resetData(),
+  'backup:export': (s) => s.backupExport(),
+  'backup:import': (s, p) => s.backupImport(p.data),
 };
 
 /** Executa uma rota e devolve sempre { ok, data } ou { ok:false, error } (erros de negócio viram mensagem). */
